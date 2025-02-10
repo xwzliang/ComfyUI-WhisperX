@@ -154,7 +154,7 @@ class WhisperX:
                 #if i== 0:
                    # _ = ts.preaccelerate_and_speedtest() 
                 content = ts.translate_text(query_text=content, translator=translator, from_language=language_code, to_language=to_language)
-                content = content.replace(".", "。")
+                content = content.replace(".", "").replace("。", "")
                 trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=speaker_name+content))
 
         for i, res in enumerate(tqdm(result["word_segments"],desc="Transcribing ...", total=len(result["word_segments"]))):
