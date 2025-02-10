@@ -106,12 +106,14 @@ class WhisperX:
         base_name = os.path.basename(audio)[:-4]
         device = "cuda" if cuda_malloc.cuda_malloc_supported() else "cpu"
         # 1. Transcribe with original whisper (batched)
+        print("Loading whisper model")
         model = whisperx.load_model(model_type, device, compute_type=compute_type)
         audio = whisperx.load_audio(audio)
         result = model.transcribe(audio, batch_size=batch_size)
         # print(result["segments"]) # before alignment
         language_code=result["language"]
         # 2. Align whisper output
+        print("Loading align model")
         model_a, metadata = whisperx.load_align_model(language_code=language_code, device=device)
         result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
 
@@ -135,24 +137,38 @@ class WhisperX:
         srt_path = os.path.join(out_path,f"{time.time()}_{base_name}.srt")
         trans_srt_path = os.path.join(out_path,f"{time.time()}_{base_name}_{to_language}.srt")
         srt_line = []
+        word_srt_line = []
         trans_srt_line = []
-        for i, res in enumerate(tqdm(result["segments"],desc="Transcribing ...", total=len(result["segments"]))):
+        # print(result)
+        for i, res in enumerate(tqdm(result["segments"],desc="Translating ...", total=len(result["segments"]))):
             start = timedelta(seconds=res['start'])
             end = timedelta(seconds=res['end'])
             try:
                 speaker_name = res["speaker"][-1]
             except:
-                speaker_name = "0"
+                speaker_name = ""
             content = res['text']
+            print(content)
             srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=speaker_name+content))
             if if_translate:
                 #if i== 0:
                    # _ = ts.preaccelerate_and_speedtest() 
-                content = ts.translate_text(query_text=content, translator=translator,to_language=to_language)
+                content = ts.translate_text(query_text=content, translator=translator, from_language=language_code, to_language=to_language)
+                content = content.replace(".", "。")
                 trans_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=speaker_name+content))
+
+        for i, res in enumerate(tqdm(result["word_segments"],desc="Transcribing ...", total=len(result["word_segments"]))):
+            start = timedelta(seconds=res['start'])
+            end = timedelta(seconds=res['end'])
+            try:
+                speaker_name = res["speaker"][-1]
+            except:
+                speaker_name = ""
+            content = res['word']
+            word_srt_line.append(srt.Subtitle(index=i+1, start=start, end=end, content=speaker_name+content))
                 
         with open(srt_path, 'w', encoding="utf-8") as f:
-            f.write(srt.compose(srt_line))
+            f.write(srt.compose(word_srt_line))
         with open(trans_srt_path, 'w', encoding="utf-8") as f:
             f.write(srt.compose(trans_srt_line))
 
