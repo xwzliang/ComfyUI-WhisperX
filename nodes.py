@@ -32,7 +32,7 @@ class PreViewSRT:
         srt_name = os.path.basename(srt)
         dir_name = os.path.dirname(srt)
         dir_name = os.path.basename(dir_name)
-        with open(srt, "r") as f:
+        with open(srt, "r", encoding="utf-8") as f:
             srt_content = f.read()
         return {"ui": {"srt": [srt_content, srt_name, dir_name]}}
 
