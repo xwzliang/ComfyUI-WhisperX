@@ -6,3 +6,5 @@ nltk
 pyannote.audio
 ffmpeg-python
 translators
+spacy
+zhpr
