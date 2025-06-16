@@ -118,6 +118,7 @@ class WhisperX:
                 "translator": (translator_list, {"default": "alibaba"}),
                 "to_language": (lang_list, {"default": "en"}),
                 "transcription": ("STRING", {"multiline": True, "default": ""}),
+                "if_return_word_srt": ("BOOLEAN", {"default": True}),
             },
         }
 
@@ -138,6 +139,7 @@ class WhisperX:
         translator,
         to_language,
         transcription,
+        if_return_word_srt,
     ):
         compute_type = "float16"
 
@@ -225,22 +227,25 @@ class WhisperX:
             except:
                 speaker_name = ""
             content = res["text"]
-            print(content)
             srt_line.append(
                 srt.Subtitle(
                     index=i + 1, start=start, end=end, content=speaker_name + content
                 )
             )
-            if if_translate:
+            if if_translate and content:
                 # if i== 0:
                 # _ = ts.preaccelerate_and_speedtest()
-                content = ts.translate_text(
-                    query_text=content,
-                    translator=translator,
-                    from_language=language_code,
-                    to_language=to_language,
-                )
-                content = content.replace(".", "").replace("。", "")
+                try:
+                    content = ts.translate_text(
+                        query_text=content,
+                        translator=translator,
+                        from_language=language_code,
+                        to_language=to_language,
+                    )
+                    content = content.replace(".", "").replace("。", "")
+                except Exception as e:
+                    print(f"Translation failed for segment {i + 1}: {e}")
+                    content = ""
                 trans_srt_line.append(
                     srt.Subtitle(
                         index=i + 1,
@@ -272,17 +277,12 @@ class WhisperX:
                 )
             )
 
-        if language_code == "en":
-            with open(srt_path, "w", encoding="utf-8") as f:
-                f.write(srt.compose(word_srt_line))
-        elif language_code == "zh":
+        if if_return_word_srt:
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write(srt.compose(word_srt_line))
         else:
             with open(srt_path, "w", encoding="utf-8") as f:
                 f.write(srt.compose(srt_line))
-        with open(trans_srt_path, "w", encoding="utf-8") as f:
-            f.write(srt.compose(trans_srt_line))
 
         if if_translate:
             return (srt_path, trans_srt_path)
