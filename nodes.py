@@ -59,54 +59,72 @@ def nlp_resegment_for_zh(segments, word_segments, nlp):
                 all_out.append(list(zip(tokenizer.convert_ids_to_tokens(tok_ids), labels)))
         merged = merge_stride(all_out, step)
         punctuated = decode_pred(merged)
+        print(f"Restored punctuation for: ", "".join(punctuated))
         return "".join(punctuated)
     
     new_subs = []
     idx = 1
 
     for seg in segments:
-        text = seg.get("text", "").strip()
-        if not text:
-            continue
-
-        # 1. NLP sentence split
         raw = seg.get("text", "").strip()
         if not raw:
             continue
-        punctuated = add_punctuation(raw)
-        doc = nlp(punctuated)
+
+        # restore punctuation
+        punct_text = add_punctuation(raw)
+        # initial sentence split
+        doc = nlp(punct_text)
         sents = [s.text.strip() for s in doc.sents if s.text.strip()]
 
-        # 2. collect word-level timestamps inside this segment
+        # further split by commas/semicolons
+        sub_sents = []
+        for sent in sents:
+            parts = re.split(r'([，,；;])', sent)
+            for i in range(0, len(parts), 2):
+                text = parts[i]
+                punct = parts[i+1] if i+1 < len(parts) else ''
+                piece = (text + punct).strip()
+                if piece:
+                    sub_sents.append(piece)
+
+        # prepare ASR word string and char map
         words = [w for w in word_segments
                  if "start" in w and seg["start"] - 1e-3 <= w["start"] <= seg["end"] + 1e-3]
+        word_str = "".join(w["word"] for w in words)
+        char_to_word_idx = []
+        for i, w in enumerate(words):
+            char_to_word_idx.extend([i] * len(w["word"]))
 
-        w_i = 0
-        for sent in sents:
-            sent_start = None
-            sent_end = None
-            accum = ""
+        search_offset = 0
+        # align each piece
+        for sent in sub_sents:
+            sent_clean = re.sub(r"[^一-鿿]", "", sent)
+            if not sent_clean:
+                continue
 
-            # accumulate words until they match the sentence
-            while w_i < len(words) and re.sub(r"\s+", "", accum) != re.sub(r"\s+", "", sent):
-                w = words[w_i]
-                if sent_start is None:
-                    sent_start = w["start"]
-                accum += w["word"]
-                sent_end = w["end"]
-                w_i += 1
+            pos = word_str.find(sent_clean, search_offset)
+            if pos < 0:
+                # fallback approximate
+                start_char = search_offset
+                end_char = min(start_char + len(sent_clean) - 1, len(char_to_word_idx) - 1)
+                start_idx = char_to_word_idx[start_char]
+                end_idx = char_to_word_idx[end_char]
+            else:
+                start_idx = char_to_word_idx[pos]
+                end_idx = char_to_word_idx[pos + len(sent_clean) - 1]
+                search_offset = pos + len(sent_clean)
 
-            # if we got timings, add subtitle
-            if sent_start is not None and sent_end is not None:
-                new_subs.append(
-                    srt.Subtitle(
-                        index=idx,
-                        start=timedelta(seconds=sent_start),
-                        end=timedelta(seconds=sent_end),
-                        content=sent
-                    )
+            start_time = words[start_idx]["start"]
+            end_time = words[end_idx]["end"]
+            new_subs.append(
+                srt.Subtitle(
+                    index=idx,
+                    start=timedelta(seconds=start_time),
+                    end=timedelta(seconds=end_time),
+                    content=sent
                 )
-                idx += 1
+            )
+            idx += 1
 
     return new_subs
 
@@ -324,6 +342,7 @@ class WhisperX:
             )
 
         if language_code == "zh":
+            print("Before nlp re-segmentation:", srt_line)
             nlp = load_spacy_model()
             srt_line = nlp_resegment_for_zh(
                 result["segments"],
@@ -335,6 +354,7 @@ class WhisperX:
         if if_translate:
             for subtitle in srt_line:
                 try:
+                    print(subtitle.content)
                     content = ts.translate_text(
                         query_text=subtitle.content,
                         translator=translator,
@@ -349,8 +369,8 @@ class WhisperX:
                 trans_srt_line.append(
                     srt.Subtitle(
                         index=i + 1,
-                        start=start,
-                        end=end,
+                        start=subtitle.start,
+                        end=subtitle.end,
                         content=speaker_name + content,
                     )
                 )
